@@ -89,12 +89,12 @@ connectivity = [];   % [nodo_i, nodo_j, tipo]  tipo: 1=cordón, 2=diagonal
 for i = 0:Ng-1
     for j = 0:Ng-1
         n_ij   = i*Ng + j + 1;  % lower node (i,j)
-        % Horizontal →
+        % Horizontal
         if j < Ng-1
             n_ij1 = i*Ng + (j+1) + 1;
             connectivity(end+1,:) = [n_ij, n_ij1, 1];
         end
-        % Vertical ↑
+        % Vertical
         if i < Ng-1
             n_i1j = (i+1)*Ng + j + 1;
             connectivity(end+1,:) = [n_ij, n_i1j, 1];
