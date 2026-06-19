@@ -495,7 +495,6 @@ for lev = 1:length(load_levels)
 end
  
 % SECTION 10: ANALYSIS OF SUPPORT CONDITIONS
- 
 fprintf('\n========================================\n');
 fprintf('   ANALYSIS - CASE 4: SUPPORT CONDITIONS\n');
 fprintf('   (Releasing horizontal restraint at node 4)\n');
@@ -552,3 +551,125 @@ for f = 1:length(ea_factors)
     fprintf('\n');
 end
 fprintf('\nExpected value (Table 4 in the paper): ea = 1.5 -> Bar 2 = 0.9199\n\n');
+
+% SECTION 12: PLOTS
+% Figure 1: 3D geometry
+figure('Name','8x8 3D Truss','Position',[50,50,900,600]);
+hold on;
+for k = 1:m_bars
+    ni = connectivity(k,1);
+    nj = connectivity(k,2);
+    xi = coords_all(ni,:);
+    xj = coords_all(nj,:);
+    if connectivity(k,3)==1
+        plot3([xi(1),xj(1)],[xi(2),xj(2)],[xi(3),xj(3)],'b-','LineWidth',0.8);
+    else
+        plot3([xi(1),xj(1)],[xi(2),xj(2)],[xi(3),xj(3)],'r-','LineWidth',0.5);
+    end
+end
+plot3(coords_free(:,1), coords_free(:,2), coords_free(:,3),'ko','MarkerFaceColor','k','MarkerSize',4);
+plot3(coords_fixed(:,1),coords_fixed(:,2),coords_fixed(:,3),'rs','MarkerFaceColor','r','MarkerSize',6);
+
+legend({'Chord members','Diagonal members','Free nodes','Fixed nodes'},...
+       'Location','northeast');
+
+title('8\times8 square pyramid truss');
+xlabel('x [m]');
+ylabel('y [m]');
+zlabel('z [m]');
+grid on;
+view(35,30);
+
+% Figure 2: Importance index
+figure('Name','Importance Index','Position',[100,100,900,500]);
+
+subplot(1,2,1);
+bar(alpha_3d,'FaceColor',[0.2 0.5 0.8],'EdgeColor','none');
+xlabel('Bar number');
+ylabel('\alpha_i');
+title('Importance index (det K)');
+grid on;
+
+subplot(1,2,2);
+bar(lam1_3d,'FaceColor',[0.8 0.3 0.2],'EdgeColor','none');
+xlabel('Bar number');
+ylabel('\lambda_1 after removal');
+title('Smallest eigenvalue after removing bar i');
+grid on;
+
+% Figure 3: 2D validation (compare with Table 2)
+figure('Name','2D Truss Validation','Position',[150,150,700,400]);
+
+bar_names = {'Bar1','Bar2','Bar3','Bar4','Bar5','Bar6'};
+bar(alpha_2d,'FaceColor',[0.3 0.7 0.3],'EdgeColor','k');
+
+set(gca,'XTickLabel',bar_names);
+
+ylabel('\alpha_i (importance index)');
+title('2D truss validation using Table 2 (Cai et al., 2017)');
+grid on;
+
+% Reference values from the paper
+paper_vals = [0, 0.885, 0.673, 0.673, 0.885, 0.885];
+
+hold on;
+plot(1:6,paper_vals,'r*--','MarkerSize',10,'LineWidth',1.5);
+
+legend({'Computed','Paper values'},'Location','northwest');
+
+% Figure 4: Newton-Raphson convergence
+F_test = zeros(ndof_2d,1);
+F_test(1) = 0.005;
+
+[~, ~, norms_conv] = newton_raphson(...
+    coords_free_2d, coords_fixed_2d, conn_2d, ...
+    E_2d, A_2d_chord, A_2d_diag, n_free_2d, ...
+    F_test, 1e-10, 50);
+
+figure('Name','Newton-Raphson Convergence','Position',[200,200,600,400]);
+
+semilogy(1:length(norms_conv), norms_conv, ...
+         'b-o','LineWidth',2,'MarkerSize',6);
+
+xlabel('Iteration');
+ylabel('||R|| (residual norm)');
+title('Newton-Raphson convergence (P = 0.005)');
+grid on;
+
+% Figure 5: Gauss-Seidel convergence
+K_test = ensamblar_rigidez(coords_free_2d, coords_fixed_2d, conn_2d, ...
+                           E_2d, A_2d_chord, A_2d_diag, n_free_2d);
+
+b_test = F_test;
+
+[~, ~, gs_res] = gauss_seidel(K_test, b_test, 1e-10, 200);
+
+figure('Name','Gauss-Seidel Convergence','Position',[250,250,600,400]);
+
+semilogy(1:length(gs_res), gs_res, ...
+         'm-s','LineWidth',2,'MarkerSize',5);
+
+xlabel('Iteration');
+ylabel('||b - Ax|| (residual)');
+title('Gauss-Seidel convergence');
+grid on;
+
+% Figure 6: Eigenvalue spectrum of the intact structure
+K_3d = ensamblar_rigidez(coords_free, coords_fixed, connectivity, ...
+                         E_steel, A_chord, A_diag, n_free);
+
+lam_all = sort(real(eig(K_3d)));
+lam_pos = lam_all(lam_all > 0);
+
+figure('Name','Eigenvalue Spectrum','Position',[300,300,700,400]);
+
+semilogy(1:length(lam_pos), lam_pos, ...
+         'k.','MarkerSize',8);
+
+xlabel('Eigenvalue index');
+ylabel('\lambda_i');
+title('Eigenvalue spectrum - 3D truss (intact structure)');
+grid on;
+
+fprintf('All plots generated successfully.\n\n');
+fprintf('=== END OF ANALYSIS ===\n');
