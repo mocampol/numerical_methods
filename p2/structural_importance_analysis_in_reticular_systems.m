@@ -265,8 +265,8 @@ function [x, iter, residuals] = gauss_seidel(A, b, tol, max_iter)
             end
             if abs(A(i,i)) < 1e-12
                 error(['Gauss-Seidel: pivote nulo en fila %d. ' ...
-                       'La matriz no es diagonalmente dominante ' ...
-                       'incluso tras reordenar filas.'], i);
+                       'The matrix is not diagonally dominant ' ...
+                       'even after reshuffling the ranks.'], i);
             end
             x(i) = (b(i) - sigma) / A(i,i);
         end
