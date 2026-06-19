@@ -23,7 +23,7 @@ t_diag = 0.004;
 A_diag = pi/4 * (d_diag^2  - (d_diag  - 2*t_diag)^2);
 
 fprintf('=== STRUCTURAL MODEL PARAMETERS ===\n');
-fprintf('Young''s Modulus       : %.3e N/m²\n', E_steel);
+fprintf('Young's Modulus       : %.3e N/m²\n', E_steel);
 fprintf('Chord Member Area     : %.4e m²\n', A_chord);
 fprintf('Diagonal Member Area  : %.4e m²\n', A_diag);
 fprintf('\n');
@@ -80,3 +80,85 @@ n_total = n_free + n_fixed;
  
 % Complete coordinates for connectivity
 coords_all = [coords_free; coords_fixed];
+
+% SECTION 3: CONNECTIVITY MATRIX (Cs)
+% Cs(k,p) = +1 (if member k starts at node p) or -1 (if member k ends at node p)
+connectivity = [];   % [nodo_i, nodo_j, tipo]  tipo: 1=cordón, 2=diagonal
+
+% Lower cords (between adjacent lower nodes)
+for i = 0:Ng-1
+    for j = 0:Ng-1
+        n_ij   = i*Ng + j + 1;  % lower node (i,j)
+        % Horizontal →
+        if j < Ng-1
+            n_ij1 = i*Ng + (j+1) + 1;
+            connectivity(end+1,:) = [n_ij, n_ij1, 1];
+        end
+        % Vertical ↑
+        if i < Ng-1
+            n_i1j = (i+1)*Ng + j + 1;
+            connectivity(end+1,:) = [n_ij, n_i1j, 1];
+        end
+    end
+end
+ 
+% Inner upper cables (between upper free nodes)
+offset_free_up = n_lower;  % offset in global numbering
+n_free_up = length(idx_free_up);
+% Construir mapa: posición en grilla sup → índice global libre
+map_up = zeros(Ng+1, Ng+1);   % 0 = fijo
+for k = 1:n_free_up
+    orig_k = idx_free_up(k);
+    row = floor((orig_k-1)/(Ng+1)) + 1;
+    col = mod(orig_k-1, Ng+1)  + 1;
+    map_up(row,col) = offset_free_up + k;
+end
+% Upper perimeter nodes -> fixed global index
+map_up_fixed = zeros(Ng+1,Ng+1);
+for k = 1:length(idx_fixed_up)
+    orig_k = idx_fixed_up(k);
+    row = floor((orig_k-1)/(Ng+1)) + 1;
+    col = mod(orig_k-1, Ng+1)  + 1;
+    map_up_fixed(row,col) = n_free + k;
+end
+ 
+% Combine the two maps into one
+map_up_full = map_up;
+mask_fixed_2d = (map_up == 0);
+map_up_full(mask_fixed_2d) = map_up_fixed(mask_fixed_2d);
+ 
+for i = 1:Ng+1
+    for j = 1:Ng+1
+        ni = map_up_full(i,j);
+        if j < Ng+1
+            nj = map_up_full(i,j+1);
+            connectivity(end+1,:) = [ni, nj, 1];
+        end
+        if i < Ng+1
+            nj = map_up_full(i+1,j);
+            connectivity(end+1,:) = [ni, nj, 1];
+        end
+    end
+end
+ 
+% Diagonals (each lower node connects to 4 upper nodes)
+for i = 0:Ng-1
+    for j = 0:Ng-1
+        n_low = i*Ng + j + 1;
+        % The top 4 nodes at the corners of the square
+        corners = [i+1,j+1; i+1,j+2; i+2,j+1; i+2,j+2];
+        for c = 1:4
+            r = corners(c,1); col_c = corners(c,2);
+            n_up = map_up_full(r, col_c);
+            connectivity(end+1,:) = [n_low, n_up, 2];
+        end
+    end
+end
+ 
+m_bars = size(connectivity,1);
+
+fprintf('=== GENERATED GEOMETRY ===\n');
+fprintf('Free nodes    : %d\n', n_free);
+fprintf('Fixed nodes   : %d\n', n_fixed);
+fprintf('Total members : %d\n', m_bars);
+fprintf('\n');
