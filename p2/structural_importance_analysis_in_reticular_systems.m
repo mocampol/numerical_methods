@@ -162,3 +162,73 @@ fprintf('Free nodes    : %d\n', n_free);
 fprintf('Fixed nodes   : %d\n', n_fixed);
 fprintf('Total members : %d\n', m_bars);
 fprintf('\n');
+
+% SECTION 4: ASSEMBLY OF THE TANGENTIAL STIFFNESS MATRIX
+% K = KE + KG
+% KE = A * K* * L^{-1} * A^T (elastic stiffness)
+% KG = I xor E (geometric stiffness)
+
+% Return the 3n × 3n tangent stiffness matrix
+function K = ensamblar_rigidez(coords_free, coords_fixed, connectivity, ...
+                                E_steel, A_chord, A_diag, n_free)
+    m  = size(connectivity,1);
+    nf = size(coords_fixed,1);
+    coords_all = [coords_free; coords_fixed];
+ 
+    % Axial parameters per bar
+    ea = zeros(m,1);
+    for k = 1:m
+        if connectivity(k,3) == 1
+            ea(k) = E_steel * A_chord;
+        else
+            ea(k) = E_steel * A_diag;
+        end
+    end
+ 
+    % Current lengths and coordinate differences
+    u = zeros(m,1); v = zeros(m,1); w = zeros(m,1);
+    l = zeros(m,1);
+    for k = 1:m
+        ni = connectivity(k,1);
+        nj = connectivity(k,2);
+        du = coords_all(nj,1) - coords_all(ni,1);
+        dv = coords_all(nj,2) - coords_all(ni,2);
+        dw = coords_all(nj,3) - coords_all(ni,3);
+        u(k) = du; v(k) = dv; w(k) = dw;
+        l(k) = sqrt(du^2 + dv^2 + dw^2);
+    end
+ 
+    % Unstrained lengths = initial lengths (unloaded state)
+    l0 = l; % for the linear case
+ 
+    % Force densities
+    q = ea .* (l - l0) ./ (l0 .* l);
+ 
+    % Connectivity matrices C (free nodes) and Cf (fixed nodes)
+    C  = zeros(m, n_free);
+    Cf = zeros(m, nf);
+    for k = 1:m
+        ni = connectivity(k,1);
+        nj = connectivity(k,2);
+        if ni <= n_free,  C(k,ni)  =  1; else Cf(k,ni-n_free) =  1; end
+        if nj <= n_free,  C(k,nj)  = -1; else Cf(k,nj-n_free) = -1; end
+    end
+ 
+    % Direction matrices  Ax, Ay, Az
+    Linv = diag(1./l);
+    Ax = C' * Linv * diag(u);
+    Ay = C' * Linv * diag(v);
+    Az = C' * Linv * diag(w);
+    A_mat = [Ax; Ay; Az]; % 3n x m
+ 
+    % Elastic stiffness
+    Kstar = diag(ea);
+    KE = A_mat * Kstar * Linv * A_mat'; % 3n x 3n
+ 
+    % Geometric stiffness
+    Q = diag(q);
+    E_mat = C' * Q * C;
+    KG = kron(eye(3), E_mat); % 3n x 3n
+ 
+    K = KE + KG;
+end
