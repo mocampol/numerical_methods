@@ -42,7 +42,7 @@ for i = 0:Ng
         idx = idx + 1;
     end
 end
- 
+
 % Nodes of the lower string (z = 0 layer), shifted by Lg/2
 n_lower = Ng^2;  % 64
 coords_lower = zeros(n_lower, 3);
@@ -53,7 +53,7 @@ for i = 0:Ng-1
         idx = idx + 1;
     end
 end
- 
+
 % Global coordinates: Identify nodes on the upper perimeter (fixed) and interior nodes (free)
 perim_mask = false(n_upper,1);
 for k = 1:n_upper
@@ -63,21 +63,21 @@ for k = 1:n_upper
         perim_mask(k) = true;
     end
 end
- 
+
 idx_fixed_up = find(perim_mask);  % of upper boundary nodes (fixed)
 idx_free_up  = find(~perim_mask);  % of upper (free) interior nodes
- 
+
 % Node numbering:
 % 1 .. n_lower                             -> free nodes on the lower chord
 % n_lower+1 .. n_lower+length(idx_free_up) -> free interior nodes on the upper chord
 % remaining nodes                          -> fixed nodes on the upper boundary
 coords_free  = [coords_lower; coords_upper(idx_free_up,:)];
 coords_fixed = coords_upper(idx_fixed_up,:);
- 
+
 n_free  = size(coords_free, 1);
 n_fixed = size(coords_fixed,1);
 n_total = n_free + n_fixed;
- 
+
 % Complete coordinates for connectivity
 coords_all = [coords_free; coords_fixed];
 
@@ -101,7 +101,7 @@ for i = 0:Ng-1
         end
     end
 end
- 
+
 % Inner upper cables (between upper free nodes)
 offset_free_up = n_lower;  % offset in global numbering
 n_free_up = length(idx_free_up);
@@ -121,12 +121,12 @@ for k = 1:length(idx_fixed_up)
     col = mod(orig_k-1, Ng+1)  + 1;
     map_up_fixed(row,col) = n_free + k;
 end
- 
+
 % Combine the two maps into one
 map_up_full = map_up;
 mask_fixed_2d = (map_up == 0);
 map_up_full(mask_fixed_2d) = map_up_fixed(mask_fixed_2d);
- 
+
 for i = 1:Ng+1
     for j = 1:Ng+1
         ni = map_up_full(i,j);
@@ -140,7 +140,7 @@ for i = 1:Ng+1
         end
     end
 end
- 
+
 % Diagonals (each lower node connects to 4 upper nodes)
 for i = 0:Ng-1
     for j = 0:Ng-1
@@ -154,7 +154,7 @@ for i = 0:Ng-1
         end
     end
 end
- 
+
 m_bars = size(connectivity,1);
 
 fprintf('=== GENERATED GEOMETRY ===\n');
@@ -214,21 +214,67 @@ function K = ensamblar_rigidez(coords_free, coords_fixed, connectivity, ...
         if nj <= n_free,  C(k,nj)  = -1; else Cf(k,nj-n_free) = -1; end
     end
  
-    % Direction matrices  Ax, Ay, Az
+    % Direction matrices Ax, Ay, Az
     Linv = diag(1./l);
     Ax = C' * Linv * diag(u);
     Ay = C' * Linv * diag(v);
     Az = C' * Linv * diag(w);
-    A_mat = [Ax; Ay; Az]; % 3n x m
+    A_mat = [Ax; Ay; Az];  % 3n x m
  
     % Elastic stiffness
     Kstar = diag(ea);
-    KE = A_mat * Kstar * Linv * A_mat'; % 3n x 3n
+    KE = A_mat * Kstar * Linv * A_mat';  % 3n x 3n
  
     % Geometric stiffness
     Q = diag(q);
     E_mat = C' * Q * C;
-    KG = kron(eye(3), E_mat); % 3n x 3n
+    KG = kron(eye(3), E_mat);  % 3n x 3n
  
     K = KE + KG;
+end
+
+% SECTION 5: GAUSS-SEIDEL METHOD
+% Solve K*u = F iteratively
+
+function [x, iter, residuals] = gauss_seidel(A, b, tol, max_iter)
+    n = length(b);
+    
+    % Rearranging rows (partial pivoting) to avoid null or very
+    % small values on the diagonal
+    [~, piv] = max(abs(A), [], 2);
+    order = 1:n;
+    for i = 1:n
+        [~, best] = max(abs(A(i:n, i)));
+        best = best + i - 1;
+        if best ~= i
+            A([i best], :) = A([best i], :);
+            b([i best])    = b([best i]);
+        end
+    end
+ 
+    x = zeros(n,1);  % initial estimate
+    residuals = zeros(max_iter,1);
+ 
+    for iter = 1:max_iter
+        for i = 1:n
+            sigma = 0;
+            for j = 1:n
+                if j ~= i
+                    sigma = sigma + A(i,j)*x(j);
+                end
+            end
+            if abs(A(i,i)) < 1e-12
+                error(['Gauss-Seidel: pivote nulo en fila %d. ' ...
+                       'La matriz no es diagonalmente dominante ' ...
+                       'incluso tras reordenar filas.'], i);
+            end
+            x(i) = (b(i) - sigma) / A(i,i);
+        end
+        res = norm(b - A*x);
+        residuals(iter) = res;
+        if res < tol
+            break;
+        end
+    end
+    residuals = residuals(1:iter);
 end
