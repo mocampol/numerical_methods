@@ -321,3 +321,66 @@ function [u, iter, norms] = newton_raphson(coords_free0, coords_fixed, ...
     end
     norms = norms(1:iter);
 end
+
+% SECTION 7: ANALYSIS OF EIGENVALUES AND EIGENVECTORS
+% Calculate the importance index for each bar
+
+% Calculate the importance index by sequentially removing bars
+% using the determinant of the tangent stiffness matrix
+function [alpha, lambda1_list, det_list] = calcular_importancia(...
+            coords_free, coords_fixed, connectivity, ...
+            E_steel, A_chord, A_diag, n_free)
+    m_bars = size(connectivity,1);
+ 
+    % System intact
+    K0 = ensamblar_rigidez(coords_free, coords_fixed, connectivity, ...
+                           E_steel, A_chord, A_diag, n_free);
+ 
+    % Eigenvalues of the intact system (eliminate rigid modes close to 0)
+    lambda0 = eig(K0);
+    lambda0 = sort(real(lambda0));
+    lambda0_pos = lambda0(lambda0 > 1e-6);  % of positive cases only
+ 
+    det_K0 = prod(lambda0_pos);  % det = product of eigenvalues
+    lambda1_0 = lambda0_pos(1);  % lower positive self-esteem
+ 
+    fprintf('Undamaged structure:\n');
+    fprintf('  det(K0) = %.6e\n', det_K0);
+    fprintf('  lambda1 = %.6e\n', lambda1_0);
+    fprintf('\n');
+ 
+    % Sequential elimination
+    alpha      = zeros(m_bars,1);
+    lambda1_list = zeros(m_bars,1);
+    det_list   = zeros(m_bars,1);
+ 
+    for k = 1:m_bars
+        % Create connectivity without the k bar
+        conn_k = connectivity([1:k-1, k+1:end], :);
+ 
+        Ki = ensamblar_rigidez(coords_free, coords_fixed, conn_k, ...
+                               E_steel, A_chord, A_diag, n_free);
+ 
+        lambda_k = eig(Ki);
+        lambda_k = sort(real(lambda_k));
+        lambda_k_pos = lambda_k(lambda_k > 1e-6);
+ 
+        if isempty(lambda_k_pos)
+            det_Ki   = 0;
+            lambda1_k = 0;
+        else
+            det_Ki    = prod(lambda_k_pos);
+            lambda1_k = lambda_k_pos(1);
+        end
+ 
+        det_list(k)    = det_Ki;
+        lambda1_list(k) = lambda1_k;
+ 
+        % Importance Index
+        if abs(det_K0) > 1e-30
+            alpha(k) = (det_K0 - det_Ki) / det_K0;
+        else
+            alpha(k) = 0;
+        end
+    end
+end
