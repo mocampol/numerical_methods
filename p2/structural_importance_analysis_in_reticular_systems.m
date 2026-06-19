@@ -1,6 +1,6 @@
 % STRUCTURAL IMPORTANCE ANALYSIS IN RETICULAR SYSTEMS
 
-% SECTION 1: MODEL PARAMETERS
+% 1) MODEL PARAMETERS
 % 8 x 8 Square Pyramid Armor
 
 % Geometric parameters
@@ -28,7 +28,7 @@ fprintf('Chord Member Area     : %.4e m²\n', A_chord);
 fprintf('Diagonal Member Area  : %.4e m²\n', A_diag);
 fprintf('\n');
 
-% SECTION 2: GEOMETRY GENERATION
+% 2) GEOMETRY GENERATION
 % 8 x 8 grid with double layer (top, bottom, and diagonal strands)
  
 % Nodes of the upper cord (z-layer = H)
@@ -81,7 +81,7 @@ n_total = n_free + n_fixed;
 % Complete coordinates for connectivity
 coords_all = [coords_free; coords_fixed];
 
-% SECTION 3: CONNECTIVITY MATRIX (Cs)
+% 3) CONNECTIVITY MATRIX (Cs)
 % Cs(k,p) = +1 (if member k starts at node p) or -1 (if member k ends at node p)
 connectivity = [];   % [nodo_i, nodo_j, tipo]  tipo: 1=cordón, 2=diagonal
 
@@ -163,7 +163,7 @@ fprintf('Fixed nodes   : %d\n', n_fixed);
 fprintf('Total members : %d\n', m_bars);
 fprintf('\n');
 
-% SECTION 4: ASSEMBLY OF THE TANGENTIAL STIFFNESS MATRIX
+% 4) ASSEMBLY OF THE TANGENTIAL STIFFNESS MATRIX
 % K = KE + KG
 % KE = A * K* * L^{-1} * A^T (elastic stiffness)
 % KG = I xor E (geometric stiffness)
@@ -233,7 +233,7 @@ function K = ensamblar_rigidez(coords_free, coords_fixed, connectivity, ...
     K = KE + KG;
 end
 
-% SECTION 5: GAUSS-SEIDEL METHOD
+% 5) GAUSS-SEIDEL METHOD
 % Solve K*u = F iteratively
 function [x, iter, residuals] = gauss_seidel(A, b, tol, max_iter)
     n = length(b);
@@ -278,7 +278,7 @@ function [x, iter, residuals] = gauss_seidel(A, b, tol, max_iter)
     residuals = residuals(1:iter);
 end
 
-% SECTION 6: MULTIVARIABLE NEWTON-RAPHSON METHOD
+% 6) MULTIVARIABLE NEWTON-RAPHSON METHOD
 % Solves the nonlinear equilibrium equation  F_int(u) = F_ext
 
 % Newton-Raphson for nonlinear structural equilibrium
@@ -322,7 +322,7 @@ function [u, iter, norms] = newton_raphson(coords_free0, coords_fixed, ...
     norms = norms(1:iter);
 end
 
-% SECTION 7: ANALYSIS OF EIGENVALUES AND EIGENVECTORS
+% 7) ANALYSIS OF EIGENVALUES AND EIGENVECTORS
 % Calculate the importance index for each bar
 
 % Calculate the importance index by sequentially removing bars
@@ -385,7 +385,7 @@ function [alpha, lambda1_list, det_list] = calcular_importancia(...
     end
 end
 
-% SECTION 8: MAIN EXECUTION
+% 8) MAIN EXECUTION
  
 fprintf('========================================\n');
 fprintf('   ANALYSIS - CASE 1: 2D TRUSS          \n');
@@ -443,7 +443,7 @@ for k = 1:min(15, m_bars)
         idx_sort(k), alpha_sorted(k), lam1_3d(idx_sort(k)));
 end
  
-% SECTION 9: NONLINEAR LOAD ANALYSIS (Newton-Raphson)
+% 9) NONLINEAR LOAD ANALYSIS (Newton-Raphson)
  
 fprintf('\n========================================\n');
 fprintf('   ANALYSIS - CASE 3: LOAD EFFECT       \n');
@@ -494,7 +494,7 @@ for lev = 1:length(load_levels)
     fprintf('\n');
 end
  
-% SECTION 10: ANALYSIS OF SUPPORT CONDITIONS
+% 10) ANALYSIS OF SUPPORT CONDITIONS
 fprintf('\n========================================\n');
 fprintf('   ANALYSIS - CASE 4: SUPPORT CONDITIONS\n');
 fprintf('   (Releasing horizontal restraint at node 4)\n');
@@ -520,7 +520,7 @@ conn_fig2 = [1, 4, 1;  % Bar 1 (node 1 - node 4, now different indices)
 fprintf('(Qualitative analysis: after releasing the horizontal support,\n');
 fprintf(' the index of member 1 increases from 0 to about 0.89 (Table 3))\n\n');
  
-% SECTION 11: STIFFNESS ANALYSIS OF BARS
+% 11) STIFFNESS ANALYSIS OF BARS
 fprintf('========================================\n');
 fprintf('   ANALYSIS - CASE 5: MEMBER STIFFNESS  \n');
 fprintf('   Varying ea of member 2               \n');
@@ -552,7 +552,7 @@ for f = 1:length(ea_factors)
 end
 fprintf('\nExpected value (Table 4 in the paper): ea = 1.5 -> Bar 2 = 0.9199\n\n');
 
-% SECTION 12: PLOTS
+% 12) PLOTS
 % Figure 1: 3D geometry
 figure('Name','8x8 3D Truss','Position',[50,50,900,600]);
 hold on;
@@ -673,3 +673,132 @@ grid on;
 
 fprintf('All plots generated successfully.\n\n');
 fprintf('=== END OF ANALYSIS ===\n');
+
+% 13) HELPER FUNCTIONS
+function [alpha, lambda1_list, det_list] = calcular_importancia_custom(...
+            coords_free, coords_fixed, connectivity, ...
+            E_steel, A_chord, A_diag, n_free, bar_mod, ea_factor)
+
+    % Same as calcular_importancia, but with the stiffness of bar_mod
+    % scaled by ea_factor
+
+    m  = size(connectivity,1);
+    nf = size(coords_fixed,1);
+    coords_all_loc = [coords_free; coords_fixed];
+
+    % Base EA values
+    ea_base = zeros(m,1);
+    for k = 1:m
+        if connectivity(k,3)==1, ea_base(k)=E_steel*A_chord;
+        else,                    ea_base(k)=E_steel*A_diag; end
+    end
+    ea_base(bar_mod) = ea_base(bar_mod) * ea_factor;
+
+    % Modified intact structure
+    K0 = ensamblar_K_custom(coords_free, coords_fixed, connectivity, ...
+                             ea_base, n_free);
+
+    lam0 = sort(real(eig(K0)));
+    lam0 = lam0(lam0 > 1e-6);
+    det_K0 = prod(lam0);
+
+    alpha        = zeros(m,1);
+    lambda1_list = zeros(m,1);
+    det_list     = zeros(m,1);
+
+    for k = 1:m
+        conn_k = connectivity([1:k-1, k+1:end],:);
+        ea_k   = ea_base([1:k-1, k+1:end]);
+
+        Ki = ensamblar_K_custom(coords_free, coords_fixed, ...
+                                conn_k, ea_k, n_free);
+
+        lam_k = sort(real(eig(Ki)));
+        lam_k = lam_k(lam_k > 1e-6);
+
+        if isempty(lam_k)
+            det_Ki = 0;
+            l1 = 0;
+        else
+            det_Ki = prod(lam_k);
+            l1 = lam_k(1);
+        end
+
+        det_list(k) = det_Ki;
+        lambda1_list(k) = l1;
+
+        if abs(det_K0) > 1e-30
+            alpha(k) = (det_K0 - det_Ki) / det_K0;
+        else
+            alpha(k) = 0;
+        end
+    end
+end
+
+function K = ensamblar_K_custom(coords_free, coords_fixed, ...
+                                connectivity, ea, n_free)
+
+    % Version of ensamblar_rigidez using an arbitrary EA vector
+
+    m  = size(connectivity,1);
+    nf = size(coords_fixed,1);
+    coords_all = [coords_free; coords_fixed];
+
+    u=zeros(m,1); v=zeros(m,1); w=zeros(m,1); l=zeros(m,1);
+
+    for k=1:m
+        ni=connectivity(k,1);
+        nj=connectivity(k,2);
+
+        du=coords_all(nj,1)-coords_all(ni,1);
+        dv=coords_all(nj,2)-coords_all(ni,2);
+        dw=coords_all(nj,3)-coords_all(ni,3);
+
+        u(k)=du;
+        v(k)=dv;
+        w(k)=dw;
+
+        l(k)=sqrt(du^2+dv^2+dw^2);
+    end
+
+    l0=l;
+    q=ea.*(l-l0)./(l0.*l);
+
+    C=zeros(m,n_free);
+    Cf=zeros(m,nf);
+
+    for k=1:m
+        ni=connectivity(k,1);
+        nj=connectivity(k,2);
+
+        if ni<=n_free
+            C(k,ni)=1;
+        else
+            Cf(k,ni-n_free)=1;
+        end
+
+        if nj<=n_free
+            C(k,nj)=-1;
+        else
+            Cf(k,nj-n_free)=-1;
+        end
+    end
+
+    Linv=diag(1./l);
+
+    Ax=C'*Linv*diag(u);
+    Ay=C'*Linv*diag(v);
+    Az=C'*Linv*diag(w);
+
+    A_mat=[Ax;Ay;Az];
+
+    Kstar=diag(ea);
+
+    KE=A_mat*Kstar*Linv*A_mat';
+
+    Q=diag(q);
+    E_mat=C'*Q*C;
+    KG=kron(eye(3),E_mat);
+
+    K=KE+KG;
+end
