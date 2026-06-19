@@ -235,7 +235,6 @@ end
 
 % SECTION 5: GAUSS-SEIDEL METHOD
 % Solve K*u = F iteratively
-
 function [x, iter, residuals] = gauss_seidel(A, b, tol, max_iter)
     n = length(b);
     
@@ -277,4 +276,48 @@ function [x, iter, residuals] = gauss_seidel(A, b, tol, max_iter)
         end
     end
     residuals = residuals(1:iter);
+end
+
+% SECTION 6: MULTIVARIABLE NEWTON-RAPHSON METHOD
+% Solves the nonlinear equilibrium equation  F_int(u) = F_ext
+
+% Newton-Raphson for nonlinear structural equilibrium
+function [u, iter, norms] = newton_raphson(coords_free0, coords_fixed, ...
+            connectivity, E_steel, A_chord, A_diag, n_free, F_ext, ...
+            tol, max_iter)
+    % The residual is  R(u) = F_ext - F_int(u)
+    % where F_int is obtained from the deformed configuration
+    % Jacobian = -K_tangent(u) -> K*du = R
+    
+    ndof = 3 * n_free;
+    u    = zeros(ndof,1);   % desplazamientos iniciales = 0
+    norms = zeros(max_iter,1);
+ 
+    for iter = 1:max_iter
+        % Deformed coordinates
+        coords_def = coords_free0;
+        coords_def(:,1) = coords_free0(:,1) + u(1:n_free);
+        coords_def(:,2) = coords_free0(:,2) + u(n_free+1:2*n_free);
+        coords_def(:,3) = coords_free0(:,3) + u(2*n_free+1:end);
+ 
+        % Tangential stiffness in current configuration
+        K = ensamblar_rigidez(coords_def, coords_fixed, connectivity, ...
+                              E_steel, A_chord, A_diag, n_free);
+ 
+        % Internal forces (linear approximation per step)
+        F_int = K * u;
+ 
+        % Residue
+        R = F_ext - F_int;
+        norms(iter) = norm(R);
+ 
+        if norms(iter) < tol
+            break;
+        end
+ 
+        lambda_reg = 1e-8 * max(abs(diag(K)));
+        du = (K + lambda_reg*eye(size(K))) \ R;
+        u = u + du;
+    end
+    norms = norms(1:iter);
 end
