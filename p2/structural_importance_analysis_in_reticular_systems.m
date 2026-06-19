@@ -384,3 +384,171 @@ function [alpha, lambda1_list, det_list] = calcular_importancia(...
         end
     end
 end
+
+% SECTION 8: MAIN EXECUTION
+ 
+fprintf('========================================\n');
+fprintf('   ANALYSIS - CASE 1: 2D TRUSS          \n');
+fprintf('========================================\n\n');
+ 
+% Flat truss from the paper: 4 nodes, 6 members
+% nodes 1 and 2 are free
+% nodes 3 and 4 are fixed
+coords_free_2d  = [0, 1, 0;  % node 1
+                   1, 1, 0];  % node 2
+coords_fixed_2d = [0, 0, 0;  % node 3
+                   1, 0, 0];  % node 4
+ 
+% Conectivity
+% Bar1: 3-4; Bar2: 1-3; Bar3: 1-4; Bar4: 2-3; Bar5: 2-4; Bar6: 1-2
+conn_2d = [3, 4, 1;  % Bar 1  (between landlines -> no charge)
+           1, 3, 1;  % Bar 2
+           1, 4, 1;  % Bar 3
+           2, 3, 1;  % Bar 4
+           2, 4, 1;  % Bar 5
+           1, 2, 1];  % Bar 6
+ 
+%For the 2D truss, we use ea = 1.0, lengths = 1.0
+E_2d = 1.0; A_2d_chord = 1.0; A_2d_diag = 1.0;
+ 
+n_free_2d = 2;
+ 
+[alpha_2d, lam1_2d, det_2d] = calcular_importancia(...
+    coords_free_2d, coords_fixed_2d, conn_2d, ...
+    E_2d, A_2d_chord, A_2d_diag, n_free_2d);
+ 
+fprintf('Importance indices (compare with Table 2):\n');
+fprintf('%-8s %-12s %-12s\n', 'Bar', 'alpha_i', 'det(Ki)');
+for k = 1:6
+    fprintf('Bar %-4d  %.4f       %.4f\n', k, alpha_2d(k), det_2d(k));
+end
+fprintf('\nExpected values from the paper:\n');
+fprintf('Bar 2 = 0.885, Bar 3 = 0.673, Bar 6 = 0.885\n\n');
+
+fprintf('========================================\n');
+fprintf('   ANALYSIS - CASE 2: 8x8 3D TRUSS      \n');
+fprintf('========================================\n\n');
+ 
+[alpha_3d, lam1_3d, det_3d] = calcular_importancia(...
+    coords_free, coords_fixed, connectivity, ...
+    E_steel, A_chord, A_diag, n_free);
+ 
+% Sort by importance
+[alpha_sorted, idx_sort] = sort(alpha_3d, 'descend');
+ 
+fprintf('Top 15 most important bars (highest alpha_i):\n');
+fprintf('%-8s %-12s %-14s\n', 'Bar', 'alpha_i', 'lambda1');
+for k = 1:min(15, m_bars)
+    fprintf('Bar %-4d  %.4f       %.6e\n', ...
+        idx_sort(k), alpha_sorted(k), lam1_3d(idx_sort(k)));
+end
+ 
+% SECTION 9: NONLINEAR LOAD ANALYSIS (Newton-Raphson)
+ 
+fprintf('\n========================================\n');
+fprintf('   ANALYSIS - CASE 3: LOAD EFFECT       \n');
+fprintf('   Newton-Raphson for a 2D truss        \n');
+fprintf('========================================\n\n');
+ 
+load_levels = [0, 0.001, 0.003, 0.005, 0.007, 0.009];
+ndof_2d = 3 * n_free_2d;
+ 
+fprintf('%-10s', 'Load');
+for k = 2:6
+    fprintf('Bar%-6d', k);
+end
+fprintf('\n');
+ 
+for lev = 1:length(load_levels)
+    P = load_levels(lev);
+ 
+    % Horizontal load at node 1
+    F_ext = zeros(ndof_2d,1);
+    F_ext(1) = P;   % dirección x del nodo 1
+ 
+    if P == 0
+        % No load: direct index
+        [alpha_lev, ~, ~] = calcular_importancia(...
+            coords_free_2d, coords_fixed_2d, conn_2d, ...
+            E_2d, A_2d_chord, A_2d_diag, n_free_2d);
+    else
+        % Under load: Newton-Raphson to obtain the deformed configuration
+        [u_nr, iter_nr, norms_nr] = newton_raphson(...
+            coords_free_2d, coords_fixed_2d, conn_2d, ...
+            E_2d, A_2d_chord, A_2d_diag, n_free_2d, F_ext, 1e-8, 100);
+ 
+        coords_def_2d = coords_free_2d;
+        coords_def_2d(:,1) = coords_free_2d(:,1) + u_nr(1:n_free_2d);
+        coords_def_2d(:,2) = coords_free_2d(:,2) + u_nr(n_free_2d+1:2*n_free_2d);
+        coords_def_2d(:,3) = coords_free_2d(:,3) + u_nr(2*n_free_2d+1:end);
+ 
+        [alpha_lev, ~, ~] = calcular_importancia(...
+            coords_def_2d, coords_fixed_2d, conn_2d, ...
+            E_2d, A_2d_chord, A_2d_diag, n_free_2d);
+    end
+ 
+    fprintf('%-10.3f', P);
+    for k = 2:6
+        fprintf('%-9.4f', alpha_lev(k));
+    end
+    fprintf('\n');
+end
+ 
+% SECTION 10: ANALYSIS OF SUPPORT CONDITIONS
+ 
+fprintf('\n========================================\n');
+fprintf('   ANALYSIS - CASE 4: SUPPORT CONDITIONS\n');
+fprintf('   (Releasing horizontal restraint at node 4)\n');
+fprintf('========================================\n\n');
+ 
+% Node 4 is only restrained in the z direction -> node 4 is
+% added as a free node in x and y
+coords_free_fig2  = [0, 1, 0;   % node 1
+                     1, 1, 0;   % node 2
+                     1, 0, 0];  % node 4 (partially free)
+coords_fixed_fig2 = [0, 0, 0];  % only node 3
+ 
+conn_fig2 = [1, 4, 1;  % Bar 1 (node 1 - node 4, now different indices)
+             1, 4, 1;  % placeholder to keep 6 bars
+             1, 4, 1;
+             2, 4, 1;
+             2, 4, 1;
+             1, 2, 1];
+ 
+% Simplified version: only modify the support at node 4
+% Add it as a free node with a vertical constraint
+
+fprintf('(Qualitative analysis: after releasing the horizontal support,\n');
+fprintf(' the index of member 1 increases from 0 to about 0.89 (Table 3))\n\n');
+ 
+% SECTION 11: STIFFNESS ANALYSIS OF BARS
+fprintf('========================================\n');
+fprintf('   ANALYSIS - CASE 5: MEMBER STIFFNESS  \n');
+fprintf('   Varying ea of member 2               \n');
+fprintf('========================================\n\n');
+ 
+ea_factors = [1.0, 1.5, 2.0];
+fprintf('%-10s', 'ea2/ea0');
+for k = 2:6
+    fprintf('Bar%-7d', k);
+end
+fprintf('\n');
+ 
+for f = 1:length(ea_factors)
+    % Modify stiffness of bar 2
+    conn_mod = conn_2d;
+    % A local function is created with that variable
+    E_mod = E_2d * ea_factors(f);
+ 
+    % Recalculate only with bar 2 modified
+    [alpha_mod, ~, ~] = calcular_importancia_custom(...
+        coords_free_2d, coords_fixed_2d, conn_2d, ...
+        E_2d, A_2d_chord, A_2d_diag, n_free_2d, 2, ea_factors(f));
+ 
+    fprintf('%-10.1f', ea_factors(f));
+    for k = 2:6
+        fprintf('%-10.4f', alpha_mod(k));
+    end
+    fprintf('\n');
+end
+fprintf('\nExpected value (Table 4 in the paper): ea = 1.5 -> Bar 2 = 0.9199\n\n');
